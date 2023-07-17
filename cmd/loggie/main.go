@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/loggie-io/loggie/pkg/ops"
+	"github.com/loggie-io/loggie/pkg/util/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -87,7 +88,8 @@ func main() {
 	// system config file
 	syscfg := sysconfig.Config{}
 	cfg.UnpackTypeDefaultsAndValidate(strings.ToLower(configType), globalConfigFile, &syscfg)
-
+	// register jsonEngine
+	json.SetDefaultEngine(syscfg.Loggie.JSONEngine)
 	// start eventBus listeners
 	eventbus.StartAndRun(syscfg.Loggie.MonitorEventBus)
 	// init log after error func
