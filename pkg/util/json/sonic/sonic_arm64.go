@@ -18,3 +18,7 @@ func (s *Sonic) Marshal(v interface{}) ([]byte, error) {
 func (s *Sonic) Unmarshal(data []byte, v interface{}) error {
 	return ErrNotSupportArch
 }
+
+func (s *Sonic) MarshalIndent(v interface{}, prefix, indent string) ([]byte, error) {
+	return nil, ErrNotSupportArch
+}

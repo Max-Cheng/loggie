@@ -30,6 +30,7 @@ func init() {
 type JSON interface {
 	Marshal(v interface{}) ([]byte, error)
 	Unmarshal(data []byte, v interface{}) error
+	MarshalIndent(v interface{}, prefix, indent string) ([]byte, error)
 }
 
 var JSONFactory = make(map[string]JSON)
@@ -48,4 +49,8 @@ func Marshal(v interface{}) ([]byte, error) {
 
 func Unmarshal(data []byte, v interface{}) error {
 	return JSONFactory["default"].Unmarshal(data, v)
+}
+
+func MarshalIndent(v interface{}, prefix, indent string) ([]byte, error) {
+	return JSONFactory["default"].MarshalIndent(v, prefix, indent)
 }

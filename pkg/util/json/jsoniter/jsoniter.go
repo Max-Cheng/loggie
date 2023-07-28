@@ -14,3 +14,7 @@ func (j *Jsoniter) Marshal(v interface{}) ([]byte, error) {
 func (j *Jsoniter) Unmarshal(data []byte, v interface{}) error {
 	return json.ConfigFastest.Unmarshal(data, v)
 }
+
+func (j *Jsoniter) MarshalIndent(v interface{}, prefix, indent string) ([]byte, error) {
+	return json.MarshalIndent(v, prefix, indent)
+}
