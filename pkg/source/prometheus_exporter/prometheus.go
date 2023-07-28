@@ -2,8 +2,8 @@ package prometheus_exporter
 
 import (
 	ctx "context"
-	"encoding/json"
 	"fmt"
+	"github.com/loggie-io/loggie/pkg/util/json"
 	"github.com/loggie-io/loggie/pkg/util/pattern"
 	timeutil "github.com/loggie-io/loggie/pkg/util/time"
 	"io"

@@ -17,8 +17,8 @@ limitations under the License.
 package sys
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/loggie-io/loggie/pkg/util/json"
 	"os"
 	"strconv"
 	"time"
