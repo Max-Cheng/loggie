@@ -89,15 +89,9 @@ func (k *Source) Init(context api.Context) error {
 
 func (k *Source) Start() error {
 	c := k.config
-	mechanism, err := kafkaSink.Mechanism(c.SASL.Type, c.SASL.UserName, c.SASL.Password, c.SASL.Algorithm)
+	mechanism, err := kafkaSink.Mechanism(c.SASL.Type, c.SASL.Username, c.SASL.Password, c.SASL.Algorithm)
 	if err != nil {
 		log.Error("kafka source sasl mechanism with error: %s", err.Error())
-		return err
-	}
-
-	topicRegx, err := regexp.Compile(k.config.Topic)
-	if err != nil {
-		log.Error("compile kafka topic regex %s error: %s", k.config.Topic, err.Error())
 		return err
 	}
 
@@ -110,13 +104,33 @@ func (k *Source) Start() error {
 			SASL: mechanism,
 		},
 	}
-	kts, err := topics.ListRe(context.Background(), client, topicRegx)
-	if err != nil {
-		return errors.WithMessage(err, "list kafka topics that match a regex error")
+
+	// list all Kafka topics by pattern
+	var confTopic []string
+	if k.config.Topic != "" {
+		confTopic = append(confTopic, k.config.Topic)
+	}
+	if len(k.config.Topics) > 0 {
+		confTopic = append(confTopic, k.config.Topics...)
+	}
+
+	var kTopics []kafka.Topic
+	for _, t := range confTopic {
+		topicRegx, err := regexp.Compile(t)
+		if err != nil {
+			log.Error("compile kafka topic regex %s error: %s", t, err.Error())
+			return err
+		}
+
+		kts, err := topics.ListRe(context.Background(), client, topicRegx)
+		if err != nil {
+			return errors.WithMessage(err, "list kafka topics that match a regex error")
+		}
+		kTopics = append(kTopics, kts...)
 	}
 
 	var groupTopics []string
-	for _, t := range kts {
+	for _, t := range kTopics {
 		groupTopics = append(groupTopics, t.Name)
 	}
 	if len(groupTopics) <= 0 {
@@ -251,8 +265,8 @@ func (k *Source) Commit(events []api.Event) {
 		for _, e := range events {
 			meta := e.Meta()
 
-			var mKafka, mPartition, mOffset interface{}
-			mKafka, exist := meta.Get(fKafka)
+			var mTopic, mPartition, mOffset interface{}
+			mTopic, exist := meta.Get(fTopic)
 			if !exist {
 				continue
 			}
@@ -266,7 +280,7 @@ func (k *Source) Commit(events []api.Event) {
 			}
 
 			msgs = append(msgs, kafka.Message{
-				Topic:     mKafka.(string),
+				Topic:     mTopic.(string),
 				Partition: mPartition.(int),
 				Offset:    mOffset.(int64),
 			})

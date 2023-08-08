@@ -48,26 +48,41 @@ const (
 )
 
 type Config struct {
-	Brokers      []string      `yaml:"brokers,omitempty" validate:"required"`
-	Topic        string        `yaml:"topic,omitempty" validate:"required" default:"loggie"`
-	Balance      string        `yaml:"balance,omitempty" default:"roundRobin"`
-	Compression  string        `yaml:"compression,omitempty" default:"gzip"`
-	MaxAttempts  int           `yaml:"maxAttempts,omitempty"`
-	BatchSize    int           `yaml:"batchSize,omitempty"`
-	BatchBytes   int64         `yaml:"batchBytes,omitempty"`
-	BatchTimeout time.Duration `yaml:"batchTimeout,omitempty"`
-	ReadTimeout  time.Duration `yaml:"readTimeout,omitempty"`
-	WriteTimeout time.Duration `yaml:"writeTimeout,omitempty"`
-	RequiredAcks int           `yaml:"requiredAcks,omitempty"`
-	SASL         SASL          `yaml:"sasl,omitempty"`
-	PartitionKey string        `yaml:"partitionKey,omitempty"`
+	Brokers                       []string        `yaml:"brokers,omitempty" validate:"required"`
+	Topic                         string          `yaml:"topic,omitempty" validate:"required" default:"loggie"`
+	IfRenderTopicFailed           RenderTopicFail `yaml:"ifRenderTopicFailed,omitempty"`
+	IgnoreUnknownTopicOrPartition bool            `yaml:"ignoreUnknownTopicOrPartition,omitempty"`
+	Balance                       string          `yaml:"balance,omitempty" default:"roundRobin"`
+	Compression                   string          `yaml:"compression,omitempty" default:"gzip"`
+	MaxAttempts                   int             `yaml:"maxAttempts,omitempty"`
+	BatchSize                     int             `yaml:"batchSize,omitempty"`
+	BatchBytes                    int64           `yaml:"batchBytes,omitempty"`
+	BatchTimeout                  time.Duration   `yaml:"batchTimeout,omitempty"`
+	ReadTimeout                   time.Duration   `yaml:"readTimeout,omitempty"`
+	WriteTimeout                  time.Duration   `yaml:"writeTimeout,omitempty"`
+	RequiredAcks                  int             `yaml:"requiredAcks,omitempty"`
+	SASL                          SASL            `yaml:"sasl,omitempty"`
+	PartitionKey                  string          `yaml:"partitionKey,omitempty"`
+}
+
+type RenderTopicFail struct {
+	DropEvent    bool   `yaml:"dropEvent,omitempty" default:"true"`
+	IgnoreError  bool   `yaml:"ignoreError,omitempty"`
+	DefaultTopic string `yaml:"defaultTopic,omitempty"`
 }
 
 type SASL struct {
 	Type      string `yaml:"type,omitempty"`
-	UserName  string `yaml:"userName,omitempty"`
+	UserName  string `yaml:"userName,omitempty"` // Deprecated, use username instead
+	Username  string `yaml:"username,omitempty"`
 	Password  string `yaml:"password,omitempty"`
 	Algorithm string `yaml:"algorithm,omitempty"`
+}
+
+func (c *Config) SetDefaults() {
+	if c.SASL.UserName != "" {
+		c.SASL.Username = c.SASL.UserName
+	}
 }
 
 func (c *Config) Validate() error {
@@ -104,7 +119,7 @@ func (c *Config) Validate() error {
 
 func (s *SASL) Validate() error {
 	if s.Type != SASLNoneType {
-		if s.UserName == "" {
+		if s.Username == "" {
 			return fmt.Errorf("kafka sink or source %s sasl with empty user name", s.Type)
 		}
 		if s.Password == "" {

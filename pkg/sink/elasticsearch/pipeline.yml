@@ -2,3 +2,12 @@ sink:
   type: elasticsearch
   hosts: ["localhost:9200"]
   index: "log-${fields.topic}-${+YYYY.MM.DD}"
+---
+# use https to access Elasticsearch
+sink:
+  type: elasticsearch
+  hosts: [ "https://localhost:9200" ]
+  index: "log-${fields.topic}-${+YYYY.MM.DD}"
+  username: elastic
+  password: xxxxxx
+  caCertPath: /tmp/ca.crt

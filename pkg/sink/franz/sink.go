@@ -19,7 +19,6 @@ package franz
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"github.com/loggie-io/loggie/pkg/core/api"
 	"github.com/loggie-io/loggie/pkg/core/log"
@@ -28,6 +27,8 @@ import (
 	"github.com/loggie-io/loggie/pkg/sink/codec"
 	"github.com/loggie-io/loggie/pkg/util/pattern"
 	"github.com/loggie-io/loggie/pkg/util/runtime"
+	"github.com/pkg/errors"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -46,7 +47,8 @@ type Sink struct {
 	writer *kgo.Client
 	cod    codec.Codec
 
-	topicPattern *pattern.Pattern
+	topicPattern        *pattern.Pattern
+	partitionKeyPattern *pattern.Pattern
 }
 
 func NewSink() *Sink {
@@ -73,6 +75,11 @@ func (s *Sink) Type() api.Type {
 
 func (s *Sink) Init(context api.Context) error {
 	s.topicPattern, _ = pattern.Init(s.config.Topic)
+
+	if s.config.PartitionKey != "" {
+		s.partitionKeyPattern, _ = pattern.Init(s.config.PartitionKey)
+	}
+
 	return nil
 }
 
@@ -113,7 +120,7 @@ func (s *Sink) Start() error {
 	}
 
 	if c.SASL.Enabled == true {
-		mch := getMechanism(c.SASL)
+		mch := GetMechanism(c.SASL)
 		if mch != nil {
 			opts = append(opts, kgo.SASL(mch))
 		}
@@ -157,8 +164,19 @@ func (s *Sink) Consume(batch api.Batch) api.Result {
 	for _, e := range events {
 		topic, err := s.selectTopic(e)
 		if err != nil {
-			log.Error("select kafka topic error: %+v", err)
-			return result.Fail(err)
+			failedConfig := s.config.IfRenderTopicFailed
+			if !failedConfig.IgnoreError {
+				log.Error("render kafka topic error: %v; event is: %s", err, e.String())
+			}
+
+			if failedConfig.DefaultTopic != "" { // if we had a default topic, send events to this one
+				topic = failedConfig.DefaultTopic
+			} else if failedConfig.DropEvent {
+				// ignore(drop) this event in default
+				continue
+			} else {
+				return result.Fail(errors.WithMessage(err, "render kafka topic error"))
+			}
 		}
 
 		msg, err := s.cod.Encode(e)
@@ -167,17 +185,34 @@ func (s *Sink) Consume(batch api.Batch) api.Result {
 			return result.Fail(err)
 		}
 
-		records = append(records, &kgo.Record{
+		message := &kgo.Record{
 			Value: msg,
 			Topic: topic,
-		})
+		}
+
+		if s.partitionKeyPattern != nil {
+			key, err := s.getPartitionKey(e)
+			if err == nil {
+				message.Key = []byte(key)
+			} else {
+				log.Warn("fail to get kafka key: %+v", err)
+			}
+
+		}
+
+		records = append(records, message)
 	}
 
 	ctx := context.Background()
 
 	if s.writer != nil {
 		ret := s.writer.ProduceSync(ctx, records...)
-		if ret.FirstErr() != nil {
+		err := ret.FirstErr()
+		if err != nil {
+			if errors.Is(err, kerr.UnknownTopicOrPartition) && s.config.IgnoreUnknownTopicOrPartition {
+				return result.Success()
+			}
+
 			return result.Fail(errors.New(fmt.Sprintf("franz ProduceSync error:%s", ret.FirstErr())))
 		}
 		return result.Success()
@@ -188,4 +223,8 @@ func (s *Sink) Consume(batch api.Batch) api.Result {
 
 func (s *Sink) selectTopic(e api.Event) (string, error) {
 	return s.topicPattern.WithObject(runtime.NewObject(e.Header())).Render()
+}
+
+func (s *Sink) getPartitionKey(e api.Event) (string, error) {
+	return s.partitionKeyPattern.WithObject(runtime.NewObject(e.Header())).Render()
 }

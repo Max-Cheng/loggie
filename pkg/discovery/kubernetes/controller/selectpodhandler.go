@@ -231,6 +231,9 @@ func (c *Controller) handlePodAddOrUpdateOfClusterLogConfig(pod *corev1.Pod) {
 }
 
 func (c *Controller) handleLogConfigPerPod(lgc *logconfigv1beta1.LogConfig, pod *corev1.Pod) error {
+	// set defaults
+	c.setDefaultsLogConfigFields(lgc)
+
 	// generate pod related pipeline configs
 	pipeRaw, err := c.getConfigFromPodAndLogConfig(lgc, pod, c.sinkLister, c.interceptorLister)
 	if err != nil {
@@ -299,7 +302,7 @@ func (c *Controller) getConfigFromContainerAndLogConfig(lgc *logconfigv1beta1.Lo
 		return nil, errors.WithMessagef(err, "unpack logConfig %s sources failed", lgc.Namespace)
 	}
 
-	filesources, err := c.updateSources(sourceConfList, pod, logConf.Name)
+	filesources, err := c.updateSources(sourceConfList, pod, logConf)
 	if err != nil {
 		return nil, err
 	}
@@ -310,10 +313,10 @@ func (c *Controller) getConfigFromContainerAndLogConfig(lgc *logconfigv1beta1.Lo
 	return pipecfg, nil
 }
 
-func (c *Controller) updateSources(sourceConfList []*source.Config, pod *corev1.Pod, logConfigName string) ([]*source.Config, error) {
+func (c *Controller) updateSources(sourceConfList []*source.Config, pod *corev1.Pod, lgc *logconfigv1beta1.LogConfig) ([]*source.Config, error) {
 	filesources := make([]*source.Config, 0)
 	for _, sourceConf := range sourceConfList {
-		filesrc, err := c.makeConfigPerSource(sourceConf, pod, logConfigName)
+		filesrc, err := c.makeConfigPerSource(sourceConf, pod, lgc)
 		if err != nil {
 			return nil, err
 		}
@@ -322,7 +325,7 @@ func (c *Controller) updateSources(sourceConfList []*source.Config, pod *corev1.
 	return filesources, nil
 }
 
-func (c *Controller) makeConfigPerSource(s *source.Config, pod *corev1.Pod, logconfigName string) ([]*source.Config, error) {
+func (c *Controller) makeConfigPerSource(s *source.Config, pod *corev1.Pod, lgc *logconfigv1beta1.LogConfig) ([]*source.Config, error) {
 	extra, err := GetKubeExtraFromFileSource(s)
 	if err != nil {
 		return nil, err
@@ -361,10 +364,10 @@ func (c *Controller) makeConfigPerSource(s *source.Config, pod *corev1.Pod, logc
 		}
 
 		// change the source name, add pod.Name-containerName as prefix, since there maybe multiple containers in pod
-		filesrc.Name = helper.GenTypePodSourceName(pod.Name, status.Name, filesrc.Name)
+		filesrc.Name = helper.GenTypePodSourceName(lgc.Namespace, pod.Namespace, pod.Name, status.Name, filesrc.Name)
 
 		// inject default pod metadata
-		if err := c.injectTypePodFields(c.config.DynamicContainerLog, filesrc, extra, pod, logconfigName, status.Name); err != nil {
+		if err := c.injectTypePodFields(c.config.DynamicContainerLog, filesrc, extra, pod, lgc, status.Name); err != nil {
 			return nil, err
 		}
 
@@ -443,10 +446,12 @@ func (c *Controller) getPathsInNode(containerPaths []string, pod *corev1.Pod, co
 	return newPaths, err
 }
 
-func (c *Controller) injectTypePodFields(dynamicContainerLogs bool, src *source.Config, extra *KubeFileSourceExtra, pod *corev1.Pod, lgcName string, containerName string) error {
+func (c *Controller) injectTypePodFields(dynamicContainerLogs bool, src *source.Config, extra *KubeFileSourceExtra, pod *corev1.Pod, lgc *logconfigv1beta1.LogConfig, containerName string) error {
 	if src.Fields == nil {
 		src.Fields = make(map[string]interface{})
 	}
+
+	omitempty := c.config.FieldsOmitEmpty
 
 	k8sFields := make(map[string]interface{})
 
@@ -471,11 +476,11 @@ func (c *Controller) injectTypePodFields(dynamicContainerLogs bool, src *source.
 		k8sFields[m.ContainerName] = containerName
 	}
 	if m.LogConfig != "" {
-		k8sFields[m.LogConfig] = lgcName
+		k8sFields[m.LogConfig] = lgc.Name
 	}
 
 	if len(c.extraTypePodFieldsPattern) > 0 {
-		for k, v := range renderTypePodFieldsPattern(c.extraTypePodFieldsPattern, pod, containerName, lgcName) {
+		for k, v := range renderTypePodFieldsPattern(c.extraTypePodFieldsPattern, pod, containerName, lgc, omitempty) {
 			k8sFields[k] = v
 		}
 	}
@@ -486,25 +491,35 @@ func (c *Controller) injectTypePodFields(dynamicContainerLogs bool, src *source.
 			return err
 		}
 		podPattern := podFields.initPattern()
-		for k, v := range renderTypePodFieldsPattern(podPattern, pod, containerName, lgcName) {
+		for k, v := range renderTypePodFieldsPattern(podPattern, pod, containerName, lgc, omitempty) {
 			k8sFields[k] = v
 		}
 	}
 
+	// inject pod labels, annotations, envs as fields
 	match := extra.MatchFields
 	if match != nil {
 		if len(match.LabelKey) > 0 {
 			for k, v := range helper.GetMatchedPodLabel(match.LabelKey, pod) {
+				if omitempty && v == "" {
+					continue
+				}
 				k8sFields[k] = v
 			}
 		}
 		if len(match.AnnotationKey) > 0 {
 			for k, v := range helper.GetMatchedPodAnnotation(match.AnnotationKey, pod) {
+				if omitempty && v == "" {
+					continue
+				}
 				k8sFields[k] = v
 			}
 		}
 		if len(match.Env) > 0 {
 			for k, v := range helper.GetMatchedPodEnv(match.Env, pod, containerName) {
+				if omitempty && v == "" {
+					continue
+				}
 				k8sFields[k] = v
 			}
 		}
@@ -515,6 +530,9 @@ func (c *Controller) injectTypePodFields(dynamicContainerLogs bool, src *source.
 				return err
 			}
 			for k, v := range ret {
+				if omitempty && v == "" {
+					continue
+				}
 				k8sFields[k] = v
 			}
 		}
@@ -704,12 +722,15 @@ func toPipelineInterceptorWithPodInject(dynamicContainerLog bool, interceptorRaw
 	return icpConfList, nil
 }
 
-func renderTypePodFieldsPattern(pm map[string]*pattern.Pattern, pod *corev1.Pod, containerName string, logConfig string) map[string]interface{} {
+func renderTypePodFieldsPattern(pm map[string]*pattern.Pattern, pod *corev1.Pod, containerName string, lgc *logconfigv1beta1.LogConfig, omitempty bool) map[string]interface{} {
 	fields := make(map[string]interface{}, len(pm))
 	for k, p := range pm {
-		res, err := p.WithK8sPod(pattern.NewTypePodFieldsData(pod, containerName, logConfig)).Render()
+		res, err := p.WithK8sPod(pattern.NewTypePodFieldsData(pod, containerName, lgc)).Render()
 		if err != nil {
 			log.Warn("add extra k8s fields %s failed: %v", k, err)
+			continue
+		}
+		if omitempty && res == "" {
 			continue
 		}
 		fields[k] = res

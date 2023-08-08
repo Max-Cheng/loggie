@@ -45,7 +45,7 @@ func makeSink(info pipeline.Info) api.Component {
 
 type Sink struct {
 	config *Config
-	cli    *ClientSet
+	cli    Client
 	codec  codec.Codec
 }
 
@@ -82,7 +82,8 @@ func (s *Sink) Init(context api.Context) error {
 func (s *Sink) Start() error {
 	indexPattern, _ := pattern.Init(s.config.Index)
 	documentIdPattern, _ := pattern.Init(s.config.DocumentId)
-	cli, err := NewClient(s.config, s.codec, indexPattern, documentIdPattern)
+	defaultIndexPattern, _ := pattern.Init(s.config.IfRenderIndexFailed.DefaultIndex)
+	cli, err := NewClient(s.config, s.codec, indexPattern, documentIdPattern, defaultIndexPattern)
 	if err != nil {
 		log.Error("start elasticsearch connection fail, err: %v", err)
 		return err
@@ -102,7 +103,7 @@ func (s *Sink) Consume(batch api.Batch) api.Result {
 		return result.Fail(clientNotInitError)
 	}
 
-	err := s.cli.BulkIndex(context.TODO(), batch)
+	err := s.cli.Bulk(context.Background(), batch)
 	if err != nil {
 		if errors.Is(err, eventer.ErrorDropEvent) {
 			return result.DropWith(err)

@@ -34,7 +34,8 @@ const (
 
 type Config struct {
 	Brokers            []string       `yaml:"brokers,omitempty" validate:"required"`
-	Topic              string         `yaml:"topic,omitempty" validate:"required"`
+	Topic              string         `yaml:"topic,omitempty"` // reserved for compatibility
+	Topics             []string       `yaml:"topics,omitempty"`
 	GroupId            string         `yaml:"groupId,omitempty" default:"loggie"`
 	ClientId           string         `yaml:"clientId,omitempty"`
 	Worker             int            `yaml:"worker,omitempty" default:"1"`
@@ -63,11 +64,29 @@ func getAutoOffset(autoOffsetReset string) int64 {
 	return kafka.LastOffset
 }
 
+func (c *Config) SetDefaults() {
+	if c.SASL.UserName != "" {
+		c.SASL.Username = c.SASL.UserName
+	}
+}
+
 func (c *Config) Validate() error {
+	if c.Topic == "" && len(c.Topics) == 0 {
+		return errors.New("topic or topics is required")
+	}
+
 	if c.Topic != "" {
 		_, err := regexp.Compile(c.Topic)
 		if err != nil {
 			return errors.WithMessagef(err, "compile kafka topic regex %s error", c.Topic)
+		}
+	}
+	if len(c.Topics) > 0 {
+		for _, t := range c.Topics {
+			_, err := regexp.Compile(t)
+			if err != nil {
+				return errors.WithMessagef(err, "compile kafka topic regex %s error", t)
+			}
 		}
 	}
 

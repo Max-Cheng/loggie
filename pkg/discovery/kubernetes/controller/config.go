@@ -38,12 +38,15 @@ type Config struct {
 
 	HostRootMountPath string `yaml:"hostRootMountPath"`
 
-	Fields         Fields            `yaml:"fields"`    // Deprecated: use typePodFields
-	K8sFields      map[string]string `yaml:"k8sFields"` // Deprecated: use typePodFields
-	TypePodFields  KubeMetaFields    `yaml:"typePodFields"`
-	TypeNodeFields KubeMetaFields    `yaml:"typeNodeFields"`
-	TypeVmFields   KubeMetaFields    `yaml:"typeVmFields"`
-	ParseStdout    bool              `yaml:"parseStdout"`
+	Fields          Fields            `yaml:"fields"`    // Deprecated: use typePodFields
+	K8sFields       map[string]string `yaml:"k8sFields"` // Deprecated: use typePodFields
+	TypePodFields   KubeMetaFields    `yaml:"typePodFields"`
+	TypeNodeFields  KubeMetaFields    `yaml:"typeNodeFields"`
+	TypeVmFields    KubeMetaFields    `yaml:"typeVmFields"`
+	FieldsOmitEmpty bool              `yaml:"fieldsOmitEmpty"`
+	ParseStdout     bool              `yaml:"parseStdout"`
+
+	Defaults Defaults `yaml:"defaults"`
 
 	// If set to true, it means that the pipeline configuration generated does not contain specific Pod paths and meta information.
 	// These data will be dynamically obtained by the file source, thereby reducing the number of configuration changes and reloads.
@@ -53,6 +56,10 @@ type Config struct {
 }
 
 type KubeMetaFields map[string]string
+
+type Defaults struct {
+	SinkRef string `yaml:"sinkRef"`
+}
 
 // Fields Deprecated
 type Fields struct {

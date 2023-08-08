@@ -87,23 +87,24 @@ func (s *Sink) Init(context api.Context) error {
 
 func (s *Sink) Start() error {
 	c := s.config
-	mechanism, err := Mechanism(c.SASL.Type, c.SASL.UserName, c.SASL.Password, c.SASL.Algorithm)
+	mechanism, err := Mechanism(c.SASL.Type, c.SASL.Username, c.SASL.Password, c.SASL.Algorithm)
 	if err != nil {
 		log.Error("kafka sink sasl mechanism with error: %s", err.Error())
 		return err
 	}
 
 	w := &kafka.Writer{
-		Addr:         kafka.TCP(c.Brokers...),
-		MaxAttempts:  c.MaxAttempts,
-		Balancer:     balanceInstance(c.Balance),
-		BatchSize:    c.BatchSize,
-		BatchBytes:   c.BatchBytes,
-		BatchTimeout: c.BatchTimeout,
-		ReadTimeout:  c.ReadTimeout,
-		WriteTimeout: c.WriteTimeout,
-		RequiredAcks: kafka.RequiredAcks(c.RequiredAcks),
-		Compression:  compression(c.Compression),
+		Addr:                   kafka.TCP(c.Brokers...),
+		MaxAttempts:            c.MaxAttempts,
+		Balancer:               balanceInstance(c.Balance),
+		BatchSize:              c.BatchSize,
+		BatchBytes:             c.BatchBytes,
+		BatchTimeout:           c.BatchTimeout,
+		ReadTimeout:            c.ReadTimeout,
+		WriteTimeout:           c.WriteTimeout,
+		RequiredAcks:           kafka.RequiredAcks(c.RequiredAcks),
+		Compression:            compression(c.Compression),
+		AllowAutoTopicCreation: true,
 		Transport: &kafka.Transport{
 			SASL: mechanism,
 		},
@@ -130,8 +131,19 @@ func (s *Sink) Consume(batch api.Batch) api.Result {
 	for _, e := range events {
 		topic, err := s.selectTopic(e)
 		if err != nil {
-			log.Error("select kafka topic error: %v; event is: %s", err, e.String())
-			continue
+			failedConfig := s.config.IfRenderTopicFailed
+			if !failedConfig.IgnoreError {
+				log.Error("render kafka topic error: %v; event is: %s", err, e.String())
+			}
+
+			if failedConfig.DefaultTopic != "" { // if we had a default topic, send events to this one
+				topic = failedConfig.DefaultTopic
+			} else if failedConfig.DropEvent {
+				// ignore(drop) this event in default
+				continue
+			} else {
+				return result.Fail(errors.WithMessage(err, "render kafka topic error"))
+			}
 		}
 
 		msg, err := s.cod.Encode(e)
@@ -165,6 +177,10 @@ func (s *Sink) Consume(batch api.Batch) api.Result {
 	if s.writer != nil {
 		err := s.writer.WriteMessages(context.Background(), km...)
 		if err != nil {
+			if errors.Is(err, kafka.UnknownTopicOrPartition) && s.config.IgnoreUnknownTopicOrPartition {
+				return result.Success()
+			}
+
 			return result.Fail(errors.WithMessage(err, "write to kafka"))
 		}
 

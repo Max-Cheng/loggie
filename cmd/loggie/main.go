@@ -21,14 +21,13 @@ import (
 	"fmt"
 	"github.com/loggie-io/loggie/pkg/ops"
 	"github.com/loggie-io/loggie/pkg/util/json"
+	"github.com/pkg/errors"
+	"go.uber.org/automaxprocs/maxprocs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-
-	"github.com/pkg/errors"
-	"go.uber.org/automaxprocs/maxprocs"
 
 	"github.com/loggie-io/loggie/cmd/subcmd"
 	"github.com/loggie-io/loggie/pkg/control"

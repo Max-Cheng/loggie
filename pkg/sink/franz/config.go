@@ -17,6 +17,7 @@ limitations under the License.
 package franz
 
 import (
+	"github.com/loggie-io/loggie/pkg/util/pattern"
 	"strings"
 	"time"
 )
@@ -24,17 +25,26 @@ import (
 const defaultKerberosConfigPath = "/etc/krb5.conf"
 
 type Config struct {
-	Brokers      []string          `yaml:"brokers,omitempty" validate:"required"`
-	Topic        string            `yaml:"topic,omitempty" validate:"required" default:"loggie"`
-	Balance      string            `yaml:"balance,omitempty" default:"roundRobin"`
-	BatchSize    int               `yaml:"batchSize,omitempty"`
-	BatchBytes   int32             `yaml:"batchBytes,omitempty"`
-	RetryTimeout time.Duration     `yaml:"retryTimeout,omitempty"`
-	WriteTimeout time.Duration     `yaml:"writeTimeout,omitempty"`
-	Compression  string            `yaml:"compression,omitempty" default:"gzip"`
-	SASL         SASL              `yaml:"sasl,omitempty"`
-	TLS          TLS               `yaml:"tls,omitempty"`
-	Security     map[string]string `yaml:"security,omitempty"`
+	Brokers                       []string          `yaml:"brokers,omitempty" validate:"required"`
+	Topic                         string            `yaml:"topic,omitempty" validate:"required" default:"loggie"`
+	IfRenderTopicFailed           RenderTopicFail   `yaml:"ifRenderTopicFailed,omitempty"`
+	IgnoreUnknownTopicOrPartition bool              `yaml:"ignoreUnknownTopicOrPartition,omitempty"`
+	Balance                       string            `yaml:"balance,omitempty" default:"roundRobin"`
+	BatchSize                     int               `yaml:"batchSize,omitempty"`
+	BatchBytes                    int32             `yaml:"batchBytes,omitempty"`
+	RetryTimeout                  time.Duration     `yaml:"retryTimeout,omitempty"`
+	WriteTimeout                  time.Duration     `yaml:"writeTimeout,omitempty"`
+	Compression                   string            `yaml:"compression,omitempty" default:"gzip"`
+	SASL                          SASL              `yaml:"sasl,omitempty"`
+	TLS                           TLS               `yaml:"tls,omitempty"`
+	Security                      map[string]string `yaml:"security,omitempty"`
+	PartitionKey                  string            `yaml:"partitionKey,omitempty"`
+}
+
+type RenderTopicFail struct {
+	DropEvent    bool   `yaml:"dropEvent,omitempty" default:"true"`
+	IgnoreError  bool   `yaml:"ignoreError,omitempty"`
+	DefaultTopic string `yaml:"defaultTopic,omitempty"`
 }
 
 type SASL struct {
@@ -67,6 +77,21 @@ type GSSAPI struct {
 	Password           string `yaml:"password,omitempty"`
 	Realm              string `yaml:"realm,omitempty"`
 	DisablePAFXFAST    bool   `yaml:"disablePAFXFAST,omitempty"`
+}
+
+func (c *Config) Validate() error {
+
+	if err := pattern.Validate(c.Topic); err != nil {
+		return err
+	}
+
+	if c.PartitionKey != "" {
+		if err := pattern.Validate(c.PartitionKey); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // convert java client style configuration into sinker
