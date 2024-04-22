@@ -17,14 +17,18 @@ limitations under the License.
 package control
 
 import (
+	"net/http"
+
+	"github.com/felixge/fgprof"
+
 	"github.com/loggie-io/loggie/pkg/core/log"
 	"github.com/loggie-io/loggie/pkg/util/yaml"
-	"net/http"
 )
 
 const HandleCurrentPipelines = "/api/v1/controller/pipelines"
 
 func (c *Controller) initHttp() {
+	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
 	http.HandleFunc(HandleCurrentPipelines, c.currentPipelinesHandler)
 }
 
